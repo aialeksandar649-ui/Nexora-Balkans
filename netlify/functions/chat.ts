@@ -1,8 +1,8 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 
-// OpenAI Chat Completions API (ChatGPT)
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = 'gpt-4.1-mini';
+// AI.cc – OpenAI-compatible API (https://www.ai.cc)
+const AI_CC_URL = 'https://api.ai.cc/v1/chat/completions';
+const AI_CC_MODEL = 'gpt-4o-mini';
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
@@ -70,14 +70,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
     return { statusCode: 405, headers: jsonHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = process.env.AI_CC_API_KEY?.trim();
   if (!apiKey) {
     return {
       statusCode: 503,
       headers: jsonHeaders,
       body: JSON.stringify({
         error: 'Assistant not configured',
-        details: 'Set OPENAI_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
+        details: 'Set AI_CC_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
       }),
     };
   }
@@ -113,14 +113,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
   ];
 
   try {
-    const res = await fetch(OPENAI_URL, {
+    const res = await fetch(AI_CC_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model: AI_CC_MODEL,
         messages: openAiMessages,
         max_tokens: 512,
         temperature: 0.2,
