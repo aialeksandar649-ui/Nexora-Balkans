@@ -4,7 +4,7 @@ A modern, full-featured booking platform for discovering and booking unique acco
 
 ## 🚀 Live Demo
 
-**https://nexorabalkan.netlify.app**
+**https://balkannexora.netlify.app**
 
 ---
 
