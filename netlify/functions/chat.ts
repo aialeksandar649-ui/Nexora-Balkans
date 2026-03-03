@@ -1,7 +1,9 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 
-const PERPLEXITY_URL = 'https://api.perplexity.ai/chat/completions';
-const MODEL = 'sonar-pro';
+// Hugging Face Inference API
+// See: https://huggingface.co/docs/api-inference/index
+const HUGGINGFACE_MODEL = 'mistralai/Mistral-7B-Instruct-v0.3';
+const HUGGINGFACE_URL = `https://api-inference.huggingface.co/models/${HUGGINGFACE_MODEL}`;
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
@@ -69,14 +71,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
     return { statusCode: 405, headers: jsonHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
+  const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
   if (!apiKey) {
     return {
       statusCode: 503,
       headers: jsonHeaders,
       body: JSON.stringify({
         error: 'Assistant not configured',
-        details: 'Set PERPLEXITY_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
+        details: 'Set HUGGINGFACE_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
       }),
     };
   }
@@ -95,40 +97,50 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
   const propertiesList = buildPropertiesList(body.properties);
 
-  const perplexityMessages = [
-    {
-      role: 'system' as const,
-      content: SYSTEM_PROMPT + '\n\n---\nKontekst sajta:\n' + SITE_CONTEXT + '\n\n---\nLista nekretnina (koristi za pitanja o lokacijama):\n' + propertiesList,
-    },
-    ...messages.map((m: { role: string; content: string }) => ({
-      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-      content: String(m.content ?? '').trim() || '(prazna poruka)'
-    }))
-  ];
+  // Pretvaramo chat poruke u jedan prompt string za Hugging Face text-generation modele
+  const conversationText = messages
+    .map((m: { role: string; content: string }) => {
+      const role = m.role === 'assistant' ? 'Assistant' : 'User';
+      const text = String(m.content ?? '').trim() || '(prazna poruka)';
+      return `${role}: ${text}`;
+    })
+    .join('\n');
+
+  const prompt =
+    `${SYSTEM_PROMPT}\n\n` +
+    `---\nKontekst sajta:\n${SITE_CONTEXT}\n\n` +
+    `---\nLista nekretnina (koristi za pitanja o lokacijama):\n${propertiesList}\n\n` +
+    `---\n` +
+    `Sada nastavi razgovor sa korisnikom. Odgovaraj samo kao Assistant.\n\n` +
+    `${conversationText}\nAssistant:`;
 
   try {
-    const res = await fetch(PERPLEXITY_URL, {
+    const res = await fetch(HUGGINGFACE_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
-        messages: perplexityMessages,
-        max_tokens: 512,
-        temperature: 0.2,
+        inputs: prompt,
+        parameters: {
+          max_new_tokens: 512,
+          temperature: 0.2,
+          return_full_text: false,
+        },
       }),
     });
 
     const responseText = await res.text();
 
     if (!res.ok) {
-      // Perplexity vratio grešku (401, 429, 500, itd.) – prosleđujemo kao 502 da je jasno da je problem sa eksternim API-jem
       let details = responseText;
       try {
-        const errJson = JSON.parse(responseText) as { error?: string; message?: string };
-        details = errJson?.error ?? errJson?.message ?? responseText;
+        const errJson = JSON.parse(responseText) as { error?: string; message?: string; detail?: unknown };
+        details =
+          (errJson as any)?.error ??
+          (errJson as any)?.message ??
+          (typeof (errJson as any)?.detail === 'string' ? (errJson as any).detail : responseText);
       } catch {
         // ostavi raw text
       }
@@ -143,23 +155,15 @@ export const handler: Handler = async (event: HandlerEvent) => {
       };
     }
 
-    let data: { choices?: Array<{ message?: { content?: string } }> };
+    let content = 'Trenutno ne mogu da odgovorim. Pokušajte ponovo ili koristite Help / Kontakt.';
     try {
-      data = JSON.parse(responseText);
+      const data = JSON.parse(responseText);
+      if (Array.isArray(data) && data.length > 0 && typeof data[0]?.generated_text === 'string') {
+        content = String(data[0].generated_text).trim() || content;
+      }
     } catch {
-      return {
-        statusCode: 502,
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          error: 'Invalid response from assistant',
-          details: 'Service returned non-JSON. Try again later.',
-        }),
-      };
+      // ako ne možemo da parsiramo JSON, ostavi fallback poruku
     }
-
-    const content =
-      data?.choices?.[0]?.message?.content?.trim() ||
-      'Trenutno ne mogu da odgovorim. Pokušajte ponovo ili koristite Help / Kontakt.';
 
     return {
       statusCode: 200,
