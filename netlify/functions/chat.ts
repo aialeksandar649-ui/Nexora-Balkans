@@ -1,9 +1,8 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 
-// Hugging Face Inference API
-// See: https://huggingface.co/docs/api-inference/index
-const HUGGINGFACE_MODEL = 'mistralai/Mistral-7B-Instruct-v0.3';
-const HUGGINGFACE_URL = `https://api-inference.huggingface.co/models/${HUGGINGFACE_MODEL}`;
+// OpenAI Chat Completions API (ChatGPT)
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const OPENAI_MODEL = 'gpt-4.1-mini';
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
@@ -71,14 +70,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
     return { statusCode: 405, headers: jsonHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  const apiKey = process.env.HUGGINGFACE_API_KEY?.trim();
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return {
       statusCode: 503,
       headers: jsonHeaders,
       body: JSON.stringify({
         error: 'Assistant not configured',
-        details: 'Set HUGGINGFACE_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
+        details: 'Set OPENAI_API_KEY in Netlify Dashboard → Site settings → Environment variables.',
       }),
     };
   }
@@ -97,37 +96,34 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
   const propertiesList = buildPropertiesList(body.properties);
 
-  // Pretvaramo chat poruke u jedan prompt string za Hugging Face text-generation modele
-  const conversationText = messages
-    .map((m: { role: string; content: string }) => {
-      const role = m.role === 'assistant' ? 'Assistant' : 'User';
-      const text = String(m.content ?? '').trim() || '(prazna poruka)';
-      return `${role}: ${text}`;
-    })
-    .join('\n');
-
-  const prompt =
-    `${SYSTEM_PROMPT}\n\n` +
-    `---\nKontekst sajta:\n${SITE_CONTEXT}\n\n` +
-    `---\nLista nekretnina (koristi za pitanja o lokacijama):\n${propertiesList}\n\n` +
-    `---\n` +
-    `Sada nastavi razgovor sa korisnikom. Odgovaraj samo kao Assistant.\n\n` +
-    `${conversationText}\nAssistant:`;
+  const openAiMessages = [
+    {
+      role: 'system' as const,
+      content:
+        SYSTEM_PROMPT +
+        '\n\n---\nKontekst sajta:\n' +
+        SITE_CONTEXT +
+        '\n\n---\nLista nekretnina (koristi za pitanja o lokacijama):\n' +
+        propertiesList,
+    },
+    ...messages.map((m: { role: string; content: string }) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: String(m.content ?? '').trim() || '(prazna poruka)',
+    })),
+  ];
 
   try {
-    const res = await fetch(HUGGINGFACE_URL, {
+    const res = await fetch(OPENAI_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        inputs: prompt,
-        parameters: {
-          max_new_tokens: 512,
-          temperature: 0.2,
-          return_full_text: false,
-        },
+        model: OPENAI_MODEL,
+        messages: openAiMessages,
+        max_tokens: 512,
+        temperature: 0.2,
       }),
     });
 
@@ -136,18 +132,12 @@ export const handler: Handler = async (event: HandlerEvent) => {
     if (!res.ok) {
       let details = responseText;
       try {
-        type HuggingFaceError = {
-          error?: string;
-          message?: string;
-          detail?: unknown;
+        type OpenAIError = {
+          error?: { message?: string; type?: string };
         };
-        const errJson = JSON.parse(responseText) as HuggingFaceError;
-        if (typeof errJson.error === 'string') {
-          details = errJson.error;
-        } else if (typeof errJson.message === 'string') {
-          details = errJson.message;
-        } else if (typeof errJson.detail === 'string') {
-          details = errJson.detail;
+        const errJson = JSON.parse(responseText) as OpenAIError;
+        if (typeof errJson.error?.message === 'string') {
+          details = errJson.error.message;
         }
       } catch {
         // ostavi raw text
@@ -165,9 +155,13 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     let content = 'Trenutno ne mogu da odgovorim. Pokušajte ponovo ili koristite Help / Kontakt.';
     try {
-      const data = JSON.parse(responseText);
-      if (Array.isArray(data) && data.length > 0 && typeof data[0]?.generated_text === 'string') {
-        content = String(data[0].generated_text).trim() || content;
+      type OpenAIChatResponse = {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const data = JSON.parse(responseText) as OpenAIChatResponse;
+      const maybeContent = data.choices?.[0]?.message?.content;
+      if (typeof maybeContent === 'string' && maybeContent.trim()) {
+        content = maybeContent.trim();
       }
     } catch {
       // ako ne možemo da parsiramo JSON, ostavi fallback poruku

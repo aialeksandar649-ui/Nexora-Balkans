@@ -30,7 +30,7 @@ A modern, full-featured booking platform for discovering and booking unique acco
 - 📍 **Location Map Picker** - Click-to-pin location when adding/editing listings (Leaflet + Nominatim)
 - 📊 **Property Comparison** - Compare multiple properties side-by-side
 - ⭐ **Reviews & Ratings** - Property reviews count and ratings display
-- 🤖 **AI Assistant** - Chat assistant (Hugging Face) for platform questions; uses live property list when deployed on Netlify
+- 🤖 **AI Assistant** - Chat assistant (ChatGPT / OpenAI) for platform questions; uses live property list when deployed on Netlify
 
 ### User Experience
 - 🌍 **Multi-language Support** - English and Serbian (Srpski)
@@ -73,7 +73,7 @@ A modern, full-featured booking platform for discovering and booking unique acco
 - **Tables** - `properties`, `profiles`, `bookings`, `contact_submissions`, `conversations`, `messages`, `reviews`, `admin_users`
 - **Storage** - `property-images` bucket for uploads; ImgBB fallback if Supabase fails or is unconfigured
 - **Edge Functions** - Optional (delete-user); see `supabase/README.md`
-- **Netlify Functions** - Optional (chat assistant using Hugging Face Inference API)
+- **Netlify Functions** - Optional (chat assistant using OpenAI Chat Completions API)
 
 ### Features & Patterns
 - **Context API** - State management (Theme, Language, Properties, Toast)
@@ -126,15 +126,15 @@ To use auth, bookings, profiles, and contact form:
 
 - **Never commit `.env`** — it is gitignored. Use `.env.example` as a template.
 - **Frontend** (in `.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (anon key only). Optional: `VITE_NETLIFY_URL` for local assistant (base URL of your deployed site).
-- **Netlify (live site)** — **Chat assistant**: In Netlify Dashboard → your site → **Site configuration** → **Environment variables**, add **`HUGGINGFACE_API_KEY`** with your Hugging Face API token (get it at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)). Without this, the assistant returns "Assistant not configured".
-- **Local assistant**: Add `HUGGINGFACE_API_KEY` to `.env` and run `npx netlify dev` (or set `VITE_NETLIFY_URL` to your deployed URL and call the live function from local frontend).
+- **Netlify (live site)** — **Chat assistant**: In Netlify Dashboard → your site → **Site configuration** → **Environment variables**, add **`OPENAI_API_KEY`** with your OpenAI API key (get it at [platform.openai.com](https://platform.openai.com/)). Without this, the assistant returns "Assistant not configured".
+- **Local assistant**: Add `OPENAI_API_KEY` to `.env` and run `npx netlify dev` (or set `VITE_NETLIFY_URL` to your deployed URL and call the live function from local frontend).
 - **Supabase Dashboard** → Edge Functions → delete-user → **Secrets**: add `SERVICE_ROLE_KEY` with your project Secret key. Do not put the secret in `.env` or in code.
 
 ## 🧭 Tech decisions
 
 - **Supabase** — Auth, PostgreSQL, RLS, Storage and Edge Functions keep the backend in one place; RLS enforces who can read/write what without extra API middleware.
 - **Direct fetch for delete-user** — The Edge Function is deployed with `--no-verify-jwt` so the gateway forwards the request; the function itself parses the user JWT and deletes only that user, keeping security in our code.
-- **Netlify Functions for the assistant** — Hugging Face API token stays server-side; the frontend calls `/.netlify/functions/chat` so the key is never exposed in the client.
+- **Netlify Functions for the assistant** — OpenAI API key stays server-side; the frontend calls `/.netlify/functions/chat` so the key is never exposed in the client.
 
 ## 📁 Project Structure
 
@@ -349,7 +349,7 @@ Note: You may need to set the `base` path in `vite.config.ts` if deploying to a 
 - Author/portfolio: config in `src/config/portfolio.ts`, "Built by" in Footer and About
 - 404 page with catch-all route
 - Inbox: refetch conversations after sending
-- Assistant chat: dynamic properties from frontend; set `HUGGINGFACE_API_KEY` on Netlify for live site
+- Assistant chat: dynamic properties from frontend; set `OPENAI_API_KEY` on Netlify for live site
 - Become Host: form validation (price > 0, max lengths)
 - PropertyDetail: loading state before "not found"
 - MyListings: delete confirmation modal
