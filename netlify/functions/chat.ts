@@ -136,11 +136,19 @@ export const handler: Handler = async (event: HandlerEvent) => {
     if (!res.ok) {
       let details = responseText;
       try {
-        const errJson = JSON.parse(responseText) as { error?: string; message?: string; detail?: unknown };
-        details =
-          (errJson as any)?.error ??
-          (errJson as any)?.message ??
-          (typeof (errJson as any)?.detail === 'string' ? (errJson as any).detail : responseText);
+        type HuggingFaceError = {
+          error?: string;
+          message?: string;
+          detail?: unknown;
+        };
+        const errJson = JSON.parse(responseText) as HuggingFaceError;
+        if (typeof errJson.error === 'string') {
+          details = errJson.error;
+        } else if (typeof errJson.message === 'string') {
+          details = errJson.message;
+        } else if (typeof errJson.detail === 'string') {
+          details = errJson.detail;
+        }
       } catch {
         // ostavi raw text
       }
